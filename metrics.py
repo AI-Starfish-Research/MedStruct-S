@@ -3,21 +3,47 @@ from collections import Counter, defaultdict
 import copy
 
 # =============================================================================
+# Configuration Layer
+# =============================================================================
+
+METRIC_CONFIG = {
+    "use_normalization": True,
+    "threshold_min": 0.8,
+    "threshold_max": 0.9,
+    "threshold_len_min": 10,
+    "threshold_len_max": 20,
+}
+
+def configure_metrics(use_normalization=None, threshold_min=None, threshold_max=None):
+    """
+    Update global metric configuration.
+    """
+    if use_normalization is not None:
+        METRIC_CONFIG["use_normalization"] = use_normalization
+    if threshold_min is not None:
+        METRIC_CONFIG["threshold_min"] = threshold_min
+    if threshold_max is not None:
+        METRIC_CONFIG["threshold_max"] = threshold_max
+
+# =============================================================================
 # Infrastructure Layer
 # =============================================================================
 
 def normalize_text(text):
     """
     Standardize text for comparison.
-    1. Strip whitespace.
-    2. Convert to lowercase.
-    3. Remove punctuation/control characters (optional, but good for robust match).
+    - If METRIC_CONFIG["use_normalization"] is False, returns str(text).
+    - Otherwise:
+      1. Strip whitespace.
+      2. Convert to lowercase.
     """
     if not text:
         return ""
+    
+    if not METRIC_CONFIG.get("use_normalization", True):
+        return str(text)
+
     text = str(text).lower().strip()
-    # Remove common punctuation if needed, for now standardizing whitespace is key.
-    # text = re.sub(r'[^\w\s]', '', text) 
     return text
 
 def compute_ned_similarity(s1, s2):
@@ -59,18 +85,21 @@ def compute_ned_similarity(s1, s2):
 def get_dynamic_threshold(text_len):
     """
     Length-Adaptive Threshold Function (Tau).
-    - Len < 10: 0.8 (Short text needs strict match)
-    - 10 <= Len <= 20: Linear transition
-    - Len > 20: 0.9 (Long text allows small noise but requires high structure match)
+    - Uses METRIC_CONFIG for bounds.
     """
-    if text_len < 10:
-        return 0.8
-    elif text_len > 20:
-        return 0.9
+    t_min = METRIC_CONFIG["threshold_min"]
+    t_max = METRIC_CONFIG["threshold_max"]
+    l_min = METRIC_CONFIG["threshold_len_min"]
+    l_max = METRIC_CONFIG["threshold_len_max"]
+
+    if text_len < l_min:
+        return t_min
+    elif text_len > l_max:
+        return t_max
     else:
-        # Linear interpolation: y = 0.01 * x + 0.7
-        # x=10 -> 0.8, x=20 -> 0.9
-        return 0.8 + (text_len - 10) * 0.01
+        # Linear interpolation
+        # y = t_min + (text_len - l_min) * (t_max - t_min) / (l_max - l_min)
+        return t_min + (text_len - l_min) * (t_max - t_min) / (l_max - l_min)
 
 def compute_iou(span1, span2):
     """

@@ -6,14 +6,14 @@
 
 ## 📁 文件结构
 
-| 脚本名 | 功能 | 适用场景 |
-| :--- | :--- | :--- |
-| `scorer.py` | **核心评分器**：计算 Task 1/2/3 的 P/R/F1 | BERT 和 GPT 通用 |
-| `convert_llm_outputs.py` | **GPT 输出对齐**：将 vLLM 原始输出转换为标准评测格式 | GPT 系列专用 |
-| `ground_gpt_preds.py` | **预测落地**：将 GPT 抽取结果落回原文 Span | GPT 系列可选 |
-| `reconstruct_gpt_gt.py` | **GT 重建**：从 vLLM 原始文件重建对齐的 GT | GPT 系列专用 |
-| `metrics.py` | **指标计算核心**：包含 NED、Jaccard、Span IoU 等计算函数 | 被 scorer.py 依赖 |
-| `report_keys_alias.py` | **键名映射 Schema**：定义标准键名与别名的映射关系 | 被 scorer.py 依赖 |
+| 脚本名                   | 功能                                                     | 适用场景          |
+| :----------------------- | :------------------------------------------------------- | :---------------- |
+| `scorer.py`              | **核心评分器**：计算 Task 1/2/3 的 P/R/F1                | BERT 和 GPT 通用  |
+| `convert_llm_outputs.py` | **GPT 输出对齐**：将 vLLM 原始输出转换为标准评测格式     | GPT 系列专用      |
+| `ground_gpt_preds.py`    | **预测落地**：将 GPT 抽取结果落回原文 Span               | GPT 系列可选      |
+| `reconstruct_gpt_gt.py`  | **GT 重建**：从 vLLM 原始文件重建对齐的 GT               | GPT 系列专用      |
+| `metrics.py`             | **指标计算核心**：包含 NED、Jaccard、Span IoU 等计算函数 | 被 scorer.py 依赖 |
+| `report_keys_alias.py`   | **键名映射 Schema**：定义标准键名与别名的映射关系        | 被 scorer.py 依赖 |
 
 ---
 
@@ -38,6 +38,23 @@ python scorer.py \
     --gt_file ../data/kv_ner_prepared_comparison/val_eval_titled.jsonl \
     --output_file ../predictions/bert/NER/score_v2_macbert.json \
     --model_name "MacBERT" --dataset_type "Original"
+```
+
+---
+
+### 3. 高级配置 (可选项)
+
+通过命令行参数可以灵活调整评测行为：
+
+| 参数              | 说明                                 | 默认值 |
+| :---------------- | :----------------------------------- | :----- |
+| `--no_normalize`  | 禁用文本预处理（如转小写、去空格）   | 开启   |
+| `--threshold_min` | 设置短文本相似度判定的最低阈值 (Tau) | `0.8`  |
+| `--threshold_max` | 设置长文本相似度判定的最高阈值 (Tau) | `0.9`  |
+
+**示例 (不使用归一化进行严格匹配)：**
+```bash
+python scorer.py --no_normalize --pred_file <path> --gt_file <path>
 ```
 
 ---
@@ -105,13 +122,14 @@ python scorer.py \
 
 ### 指标说明
 
-| 指标 | 含义 |
-| :--- | :--- |
-| **K_E (Strict)** | 键名严格匹配 |
-| **K_A (Robust)** | 键名容错匹配 (通过 Schema 别名) |
-| **QA_E (Exact)** | 值精确匹配 |
-| **QA_A (Approx)** | 值模糊匹配 (基于字符级编辑距离的归一化相似度 ≥ 0.8) |
-| **QA_Pos-E/A** | **正向值匹配** (仅统计 GT 非空的样本) |
+| 指标              | 含义                                                         |
+| :---------------- | :----------------------------------------------------------- |
+| **K_E (Strict)**  | 键名严格匹配                                                 |
+| **K_A (Robust)**  | 键名容错匹配 (通过 Schema 别名)                              |
+| **QA_E (Exact)**  | 值精确匹配                                                   |
+| **QA_A (Approx)** | 值模糊匹配 (默认基于字符级 NED 相似度 ≥ 0.8~0.9，**可配置**) |
+| **QA_Pos-E/A**    | **正向值匹配** (仅统计 GT 非空的样本)                        |
+| **Normalization** | 文本归一化（默认开启，包含转小写、首尾去空格，**可配置**）   |
 
 ---
 
@@ -124,16 +142,17 @@ python scorer.py \
 
 ## 📂 相关数据路径
 
-| 数据类型 | 路径 |
-| :--- | :--- |
-| Original GT | `data/kv_ner_prepared_comparison/val_eval_titled.jsonl` |
-| DA GT| `data/sft_data_da_clean260123/test_flattened_with_spans_v2.jsonl` |
-| BERT NER 预测 | `predictions/bert/NER/` |
-| BERT EBQA 预测 | `predictions/bert/EBQA/` |
-| GPT Task 1/2/3 预测 | `predictions/gpt/task*_da*/` |
+| 数据类型            | 路径                                                              |
+| :------------------ | :---------------------------------------------------------------- |
+| Original GT         | `data/kv_ner_prepared_comparison/val_eval_titled.jsonl`           |
+| DA GT               | `data/sft_data_da_clean260123/test_flattened_with_spans_v2.jsonl` |
+| BERT NER 预测       | `predictions/bert/NER/`                                           |
+| BERT EBQA 预测      | `predictions/bert/EBQA/`                                          |
+| GPT Task 1/2/3 预测 | `predictions/gpt/task*_da*/`                                      |
 
 ---
 
 ## 📝 版本历史
 
 - **2026-02-05**: 初始版本，整合 BERT 和 GPT 评测全流程。
+- **2026-02-07**: 新增“配置模式”，支持通过命令行开启/关闭归一化，以及自定义编辑距离阈值。

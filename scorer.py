@@ -10,12 +10,22 @@ from collections import defaultdict
 # Add project root to path
 sys.path.insert(0, os.getcwd())
 
-from core.metrics import (
-    calculate_task1_stats,
-    calculate_task2_stats,
-    calculate_task3_stats,
-    calc_micro_f1
-)
+try:
+    from core.metrics import (
+        calculate_task1_stats,
+        calculate_task2_stats,
+        calculate_task3_stats,
+        calc_micro_f1,
+        configure_metrics
+    )
+except ImportError:
+    from metrics import (
+        calculate_task1_stats,
+        calculate_task2_stats,
+        calculate_task3_stats,
+        calc_micro_f1,
+        configure_metrics
+    )
 from pre_struct.kv_ner.schema_utils import load_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -111,7 +121,18 @@ def main():
     parser.add_argument("--dataset_type", default="Original", help="DA or Original")
     parser.add_argument("--train_mode", default="Unknown", help="LoRA/ZeroShot")
     parser.add_argument("--language", default="Unknown", help="en/zh")
+    parser.add_argument("--no_normalize", action="store_false", dest="normalize", help="Disable text normalization")
+    parser.add_argument("--threshold_min", type=float, default=None, help="Force override min threshold (Tau)")
+    parser.add_argument("--threshold_max", type=float, default=None, help="Force override max threshold (Tau)")
+    parser.set_defaults(normalize=True)
     args = parser.parse_args()
+
+    # Configure Metrics logic
+    configure_metrics(
+        use_normalization=args.normalize,
+        threshold_min=args.threshold_min,
+        threshold_max=args.threshold_max
+    )
 
     # Load Data
     logger.info(f"Loading predictions: {args.pred_file}")

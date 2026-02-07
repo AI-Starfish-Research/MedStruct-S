@@ -7,7 +7,10 @@ import re
 # Add project root to path
 sys.path.insert(0, os.getcwd())
 
-from core.metrics import normalize_text
+try:
+    from core.metrics import normalize_text
+except ImportError:
+    from metrics import normalize_text
 
 def find_best_span(text, subtext, start_hint=0):
     """
