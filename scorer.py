@@ -1,4 +1,3 @@
-
 import argparse
 import json
 import sys
@@ -7,335 +6,160 @@ import logging
 import datetime
 from collections import defaultdict
 
-# Add project root to path
+# 将项目根目录集成到系统路径，确保 med_eval 模块可被正确导入
 sys.path.insert(0, os.getcwd())
 
-try:
-    from core.metrics import (
-        calculate_task1_stats,
-        calculate_task2_stats,
-        calculate_task3_stats,
-        calc_micro_f1,
-        configure_metrics
-    )
-except ImportError:
-    from metrics import (
-        calculate_task1_stats,
-        calculate_task2_stats,
-        calculate_task3_stats,
-        calc_micro_f1,
-        configure_metrics
-    )
-from pre_struct.kv_ner.schema_utils import load_schema
+# 导入评测引擎包中的调度函数
+from med_eval.engine import run_evaluation
 
+# 配置全局日志格式
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 def load_jsonl(filepath):
+    """
+    加载 JSONL 格式的文件。
+    逐行解析并处理可能的 JSON 格式错误或空行。
+    """
     data = []
+    if not filepath or not os.path.exists(filepath):
+        logger.error(f"文件未找到: {filepath}")
+        return []
     with open(filepath, 'r', encoding='utf-8') as f:
         for line in f:
             if line.strip():
-                data.append(json.loads(line))
+                try:
+                    data.append(json.loads(line))
+                except Exception as e:
+                    logger.warning(f"行解析失败: {line[:50]}... 错误: {e}")
     return data
 
-    return keys, pairs, spans_map
-
-def extract_spans_from_item(item, allowed_keys=None, key_normalizer=None):
+def load_schema(p):
     """
-    Extract spans from item for alignment.
-    Returns:
-        keys: list of key texts
-        pairs: list of (key, value) tuples
-        spans_map: dict {key_text: (start, end)} or {key_text: None}
-        
-    Note: The input format might vary (BERT vs GPT).
-    We expect a standard: `_kv_spans` or `spans` (GT) or `pred_pairs` with structure.
-    Fallback: If none above, and allowed_keys provided, treat as Flat Dict (GT).
+    加载键名别名映射表 (Schema)。
+    用于 Task 2 (值提取) 的别名对齐和标准字段列表确定。
     """
-    keys = []
-    pairs = []
-    spans_map = {}
-    
-    # 1. Check for `_kv_spans` (Produced by convert_da_with_spans.py)
-    if '_kv_spans' in item:
-        for k, v_info in item['_kv_spans'].items():
-            norm_k = key_normalizer(k) if key_normalizer else k
-            keys.append(norm_k)
-            pairs.append((norm_k, v_info.get('value', '')))
-            spans_map[norm_k] = None
+    if not p or not os.path.exists(p):
+        logger.warning(f"Schema 文件未找到，Task 2 可能会受限: {p}")
+        return {}
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"加载 Schema 失败: {e}")
+        return {}
 
-    # 2. Check for `spans` (GT format in val_eval.jsonl)
-    elif 'spans' in item: # GT style
-        for k, v in item['spans'].items():
-            norm_k = key_normalizer(k) if key_normalizer else k
-            keys.append(norm_k)
-            v_text = v.get('text', '')
-            pairs.append((norm_k, v_text))
-            spans_map[norm_k] = None 
-            
-    # 3. Check for `pred_pairs` (Pred style)
-    elif 'pred_pairs' in item: # Pred style
-        for p in item['pred_pairs']:
-            k = p.get('key')
-            v = p.get('value', '')  # 空值也保留
-            
-            norm_k = key_normalizer(k) if key_normalizer else k
-            keys.append(norm_k)
-            pairs.append((norm_k, v if v else ''))
-            
-            # Check if spans exist
-            if 'key_span' in p and p['key_span'] is not None:
-                spans_map[norm_k] = tuple(p['key_span'])
-            else:
-                spans_map[norm_k] = None
-                
-    # 4. Fallback: Flat Dict (GT Raw)
-    else:
-        # 元数据字段列表（不是真正的 Key-Value 对）
-        META_KEYS = {'id', 'report_title', 'text', 'ocr_text', '_kv_spans', 'spans'}
-        
-        for k, v in item.items():
-            # 跳过元数据字段
-            if k in META_KEYS:
-                continue
-            # If allowed_keys is provided, filter by it
-            if allowed_keys is not None and k not in allowed_keys:
-                continue
-            
-            norm_k = key_normalizer(k) if key_normalizer else k
-            keys.append(norm_k)
-            # Ensure value is string
-            pairs.append((norm_k, str(v) if v is not None else ""))
-            spans_map[norm_k] = None
-
-    return keys, pairs, spans_map
 
 def main():
-    parser = argparse.ArgumentParser(description="Unified Scorer for Intermediate Data Protocol")
-    parser.add_argument("--pred_file", required=True, help="Prediction JSONL")
-    parser.add_argument("--gt_file", required=True, help="Ground Truth JSONL")
-    parser.add_argument("--schema_file", default="data/kv_ner_prepared_comparison/keys_merged_1027_cleaned.json", help="Schema for Task 3")
-    parser.add_argument("--output_file", default=None, help="Save metrics to JSON")
-    parser.add_argument("--model_name", default=None, help="Model Name (optional)")
-    parser.add_argument("--dataset_type", default="Original", help="DA or Original")
-    parser.add_argument("--train_mode", default="Unknown", help="LoRA/ZeroShot")
-    parser.add_argument("--language", default="Unknown", help="en/zh")
-    parser.add_argument("--no_normalize", action="store_false", dest="normalize", help="Disable text normalization")
-    parser.add_argument("--threshold_min", type=float, default=None, help="Force override min threshold (Tau)")
-    parser.add_argument("--threshold_max", type=float, default=None, help="Force override max threshold (Tau)")
-    parser.set_defaults(normalize=True)
+    """
+    评测主入口：
+    1. 解析命令行参数，配置评测引擎行为。
+    2. 加载预测文件和真值文件。
+    3. 执行标准化转换和任务特定的数据过滤。
+    4. 调用引擎计算指标并生成扁平化的标准化 JSON 报告。
+    """
+    parser = argparse.ArgumentParser(description="医疗结构化数据评测工具 (Unified Modular Scorer)")
+    
+    # 基础文件 I/O 参数
+    parser.add_argument("--pred_file", required=True, help="模型预测结果文件 (.jsonl)")
+    parser.add_argument("--gt_file", required=True, help="人工标注真值文件 (.jsonl)")
+    parser.add_argument("--schema_file", default="data/kv_ner_prepared_comparison/keys_merged_1027_cleaned.json", help="别名映射及标准字段表")
+    parser.add_argument("--output_file", default=None, help="结果 JSON 保存路径")
+    parser.add_argument("--task_type", default="all", choices=["task1", "task2", "task3", "all"], help="运行指定任务评测")
+    
+    # 算法行为控制：通过参数控制归一化、动态阈值和位置校验
+    parser.add_argument("--no_normalize", action="store_false", dest="normalize", help="禁用文本归一化（转小写、去空格）")
+    parser.add_argument("--similarity_threshold", type=float, default=0.8, help="NED 相似度判定阈值")
+    parser.add_argument("--overlap_threshold", type=float, default=0.0, help="Span IoU 重叠度阈值")
+    parser.add_argument("--disable_tau", action="store_false", dest="tau_dynamic", help="禁用 Tau 长度自适应动态阈值")
+    
+    # 元数据信息（仅用于结果汇总报告）
+    parser.add_argument("--model_name", default=None, help="模型名称标识")
+    parser.add_argument("--dataset_type", default="Original", help="数据集类型标识 (Original/DA)")
+    
+    parser.set_defaults(normalize=True, tau_dynamic=True)
     args = parser.parse_args()
 
-    # Configure Metrics logic
-    configure_metrics(
-        use_normalization=args.normalize,
-        threshold_min=args.threshold_min,
-        threshold_max=args.threshold_max
-    )
-
-    # Load Data
-    logger.info(f"Loading predictions: {args.pred_file}")
-    preds = load_jsonl(args.pred_file)
-    logger.info(f"Loading ground truth: {args.gt_file}")
-    gts = load_jsonl(args.gt_file)
+    # Load IO
+    logger.info(f"正在加载预测文件: {args.pred_file}")
+    predictions = load_jsonl(args.pred_file)
+    logger.info(f"正在加载真值文件: {args.gt_file}")
+    ground_truth = load_jsonl(args.gt_file)
+    
+    # Assert sample counts match
+    if len(predictions) != len(ground_truth):
+        logger.error(f"Sample count mismatch: Preds={len(predictions)}, GT={len(ground_truth)}")
+        sys.exit(1)
+        
+    num_samples = len(predictions)
+    logger.info(f"共处理 {num_samples} 条样本进行对比。")
     
     # Load Schema
-    keys_dict = load_schema(args.schema_file) or {}
+    key_alias_map = load_schema(args.schema_file)
     
-    # Build Alias Map (Alias -> Canonical)
-    alias_map = {}
-    flat_keys = set()
+    # Config object for reporting only
+    report_config = {
+        "normalize": args.normalize,
+        "similarity_threshold": args.similarity_threshold,
+        "overlap_threshold": args.overlap_threshold,
+        "tau_dynamic": args.tau_dynamic,
+        "use_em": True,
+        "use_am": True,
+        "use_span": True
+    }
+
+    # Execute
+    logger.info(f"正在启动任务评测: {args.task_type}...")
     
-    # helper to add to map
-    def add_map(k, v):
-        alias_map[k] = v
-        # Also normalize spaces/lower? For now exact.
-    
-    for cat, items in keys_dict.items():
-        if isinstance(items, dict):
-            for key, info in items.items():
-                # Canonical
-                flat_keys.add(key)
-                add_map(key, key)
-                
-                # Aliases
-                if isinstance(info, dict) and "别名" in info:
-                    for alias in info["别名"]:
-                        add_map(alias, key)
+    results = run_evaluation(
+        predictions=predictions,
+        ground_truth=ground_truth,
+        key_alias_map=key_alias_map,
+        task_type=args.task_type,
+        normalize=args.normalize,
+        tau_dynamic=args.tau_dynamic,
+        similarity_threshold=args.similarity_threshold,
+        overlap_threshold=args.overlap_threshold
+    )
+
+    # Assemble final standardized report
+    final_report = {
+        "summary": {
+            "model": args.model_name or os.path.basename(args.pred_file),
+            "dataset": args.dataset_type,
+            "samples": num_samples,
+            "eval_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "config": report_config
+        },
+        "tasks": {}
+    }
+
+    # 结果字段映射表，用于美化 JSON 键名
+    task_map = {
+        "Task 1 (Key Discovery)": "task1",
+        "Task 2 (Value Extraction)": "task2",
+        "Task 3 (E2E Pairing)": "task3"
+    }
+
+    # 扁平化数据处理逻辑：将 Task 2 的两个维度提升至顶级任务列表
+    for raw_name, data in results.items():
+        clean_key = task_map.get(raw_name, raw_name.lower().replace(" ", "_"))
+        if clean_key == "task2":
+            # 将 Task 2 的 Global/Pos 维度拆分，方便用户解析
+            final_report["tasks"]["task2_global"] = data["global"]
+            final_report["tasks"]["task2_pos_only"] = data["pos_only"]
         else:
-            # Flat list or unexpected structure
-            flat_keys.add(items) # items is likely the key name if list?
-            # But the file structure seen is Dict[Cat, Dict[Key, Info]]
-            pass
+            final_report["tasks"][clean_key] = data
 
-    # Hardcoded Fallbacks for Original Data issues (GT vs Schema)
-    fallback_map = {
-        "医院名称": "医院",
-        "病史叙述者": "病史陈述者",
-        "常规病理号": "病理号",  # Hypothesis, or map to '病案号'? No, '病理号' usually.
-        "送检医院": "医院",       # Map to generic hospital if specific not found? 
-                                  # Or keeps as '送检单位' (from file). 
-                                  # Note: File maps '送检医院' -> '送检单位'. 
-                                  # If Model predicts '医院', we want GT '送检医院' to match '医院'? 
-                                  # No, '送检医院' is Sending Hospital. '医院' is usually Treating Hospital.
-                                  # They are different. 
-                                  # But if Model output '医院' for '送检医院' text -> Mismatch is correct.
-                                  # Unless text is same.
-    }
-    for k, v in fallback_map.items():
-        if k not in alias_map:
-            alias_map[k] = v
-
-    logger.info(f"Loaded Schema with {len(flat_keys)} canonical keys and {len(alias_map)} total mappings.")
-    keys_search_set = flat_keys
+    # 序列化为 JSON 字符串并输出
+    report_json = json.dumps(final_report, indent=2, ensure_ascii=False)
+    print(report_json)
     
-    def normalize_key(k):
-        # 1. Direct Lookup
-        if k in alias_map: return alias_map[k]
-        # 2. Hardcoded specific string ops (optional)
-        return k
-
-    # Truncate to min length
-    num_samples = min(len(preds), len(gts))
-    logger.info(f"Evaluating {num_samples} samples...")
-    
-    # Accumulators
-    t1_strict = {"tp": 0, "fp": 0, "fn": 0}
-    t1_robust = {"tp": 0, "fp": 0, "fn": 0}
-    
-    t2_global = {"matched_keys_count": 0, "target_gt_count": 0, "tp_exact": 0, "tp_approx": 0}
-    t2_pos = {"matched_keys_count": 0, "target_gt_count": 0, "tp_exact": 0, "tp_approx": 0}
-    
-    t3_counts = {"total_p": 0, "total_g": 0, "ss_tp": 0, "sr_tp": 0, "rr_tp": 0}
-
-    for i in range(num_samples):
-        # Extract Preds
-        # Extract Raw (for Task 1: Key Discovery - Strict Raw Match)
-        p_keys_raw, p_pairs_raw, p_spans_raw = extract_spans_from_item(preds[i], allowed_keys=None, key_normalizer=None)
-        g_keys_raw, g_pairs_raw, g_spans_raw = extract_spans_from_item(gts[i], allowed_keys=None, key_normalizer=None)
-
-        # Extract Normalized (for Task 2/3: Value Extraction - Schema Aligned)
-        p_keys_norm, p_pairs_norm, p_spans_norm = extract_spans_from_item(preds[i], allowed_keys=keys_search_set, key_normalizer=normalize_key)
-        g_keys_norm, g_pairs_norm, g_spans_norm = extract_spans_from_item(gts[i], allowed_keys=keys_search_set, key_normalizer=normalize_key)
-        
-        # --- Task 1 (Use Raw Keys) ---
-        # 根据用户要求，Task 1 不进行键名映射，直接使用原文/GT中的原始键名
-        # Filter GT keys to only include those with actual values (Positive Discovery)
-        def is_empty(v): return not v or str(v).strip() == "" or str(v).lower() == "null"
-        g_keys_pos_raw = [k for k, v in g_pairs_raw if not is_empty(v)]
-        
-        p_span_list = [p_spans_raw.get(k) for k in p_keys_raw]
-        g_span_list = [g_spans_raw.get(k) for k in g_keys_pos_raw]
-        
-        t1_e, t1_a = calculate_task1_stats(p_keys_raw, g_keys_pos_raw, p_span_list, g_span_list)
-        
-        for k in t1_strict: t1_strict[k] += t1_e[k]
-        for k in t1_robust: t1_robust[k] += t1_a[k]
-        
-        # --- Task 2 (Use Normalized Pairs with Schema Densification) ---
-        # 动态稠密化：根据标题加载对应的 Schema 字段
-        title = preds[i].get('report_title', "") or gts[i].get('report_title', "通用病历")
-        local_schema = keys_dict.get(title, {})
-        if isinstance(local_schema, list):
-            local_schema = {k: k for k in local_schema}
-        
-        # 构建当前标题下的稠密 GT 字典
-        # 1. 获取归一化后的 Schema 键集
-        schema_keys_norm = set(normalize_key(sk) for sk in local_schema.keys())
-        # 2. 将原始归一化后的 GT 对转为字典
-        g_dict_norm = dict(g_pairs_norm)
-        # 3. 构建稠密 GT：包含 Schema 里的所有键，GT 里没有的填空
-        g_pairs_densed = []
-        for sk_norm in schema_keys_norm:
-            gv = g_dict_norm.get(sk_norm, "")
-            g_pairs_densed.append((sk_norm, gv))
-        
-        # 使用稠密 GT 进行 Task 2 评测
-        t2 = calculate_task2_stats(p_pairs_norm, g_pairs_densed)
-        for k in t2_global: t2_global[k] += t2['global'][k]
-        for k in t2_pos: t2_pos[k] += t2['pos'][k]
-        
-        # --- Task 3 (Use Raw Pairs - No Schema) ---
-        t3 = calculate_task3_stats(p_pairs_raw, g_pairs_raw, p_spans_raw, g_spans_raw)
-        for k in t3_counts: t3_counts[k] += t3[k]
-
-    # --- Results ---
-    results = {}
-    
-    # Task 1
-    t1_s_res = calc_micro_f1(t1_strict['tp'], t1_strict['tp']+t1_strict['fp'], t1_strict['tp']+t1_strict['fn'])
-    t1_r_res = calc_micro_f1(t1_robust['tp'], t1_robust['tp']+t1_robust['fp'], t1_robust['tp']+t1_robust['fn'])
-    results["Task 1 (Key Discovery)"] = {
-        "Strict (K_E)": t1_s_res,
-        "Robust (K_A)": t1_r_res
-    }
-    
-    # Task 2
-    def calc_t2_res(stats):
-        # P = TP / Matched Keys
-        # R = TP / GT Target Count
-        denom_p = stats['matched_keys_count']
-        denom_r = stats['target_gt_count']
-        
-        pe = stats['tp_exact'] / denom_p if denom_p else 0
-        re = stats['tp_exact'] / denom_r if denom_r else 0
-        f1e = 2*pe*re/(pe+re) if pe+re else 0
-        
-        pa = stats['tp_approx'] / denom_p if denom_p else 0
-        ra = stats['tp_approx'] / denom_r if denom_r else 0
-        f1a = 2*pa*ra/(pa+ra) if pa+ra else 0
-        
-        return {
-            "Exact": {"p": pe, "r": re, "f1": f1e},
-            "Approx": {"p": pa, "r": ra, "f1": f1a}
-        }
-
-    res_global = calc_t2_res(t2_global)
-    res_pos = calc_t2_res(t2_pos)
-
-    results["Task 2 (Value Extraction)"] = {
-        "Exact (QA_E)": res_global["Exact"],
-        "Approx (QA_A)": res_global["Approx"],
-        "Exact (QA_Pos-E)": res_pos["Exact"],
-        "Approx (QA_Pos-A)": res_pos["Approx"]
-    }
-    
-    # Task 3
-    # SS
-    res_ss = calc_micro_f1(t3_counts['ss_tp'], t3_counts['total_p'], t3_counts['total_g'])
-    res_sr = calc_micro_f1(t3_counts['sr_tp'], t3_counts['total_p'], t3_counts['total_g'])
-    res_rr = calc_micro_f1(t3_counts['rr_tp'], t3_counts['total_p'], t3_counts['total_g'])
-    
-    results["Task 3 (E2E Extraction)"] = {
-        "Strict-Strict (K_E V_E)": res_ss,
-        "Strict-Robust (K_E V_A)": res_sr,
-        "Robust-Robust (K_A V_A)": res_rr
-    }
-
-    # --- Metadata ---
-    model_name = args.model_name
-    if not model_name:
-        # Infer from filename: remove extension and path
-        base = os.path.basename(args.pred_file)
-        model_name = os.path.splitext(base)[0]
-    
-    results["metadata"] = {
-        "model_name": model_name,
-        "dataset_type": args.dataset_type,
-        "train_mode": args.train_mode,
-        "language": args.language,
-        "eval_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "dataset_path": args.gt_file,
-        "num_samples": num_samples
-    }
-
-    print(json.dumps(results, indent=2, ensure_ascii=False))
-    
+    # 如果指定了输出路径，将结果持久化
     if args.output_file:
         with open(args.output_file, 'w', encoding='utf-8') as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-        logger.info(f"Metrics saved to {args.output_file}")
+            f.write(report_json)
+        logger.info(f"报表已保存至: {args.output_file}")
 
 if __name__ == "__main__":
     main()
