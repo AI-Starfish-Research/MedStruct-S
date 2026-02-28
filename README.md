@@ -2,13 +2,13 @@
 
 ## What is MedStruct-S?
 
-MedStruct-S is a standardized evaluation framework designed to assess the performance of models (such as BERT-based NER/QA and Large Language Models - LLMs) on medical text structuring tasks.
+MedStruct-S is a standardized evaluation framework designed to assess the performance of models (such as Encoder-only NER/QA and Decoder-only Models) on medical text semi-structuring tasks.
 
-MedStruct-S provides a robust evaluation engine based on core medical semantic alignment, moving beyond simple string-matching to evaluate the true structural integrity and accuracy of information extraction. It includes task-specific logic and data preprocessing utilities to evaluate models fairly on real-world clinical datasets.
+MedStruct-S provides a robust evaluation engine based on core medical semantic alignment, moving beyond simple string-matching to evaluate the true structural integrity and accuracy of information extraction. It includes task-specific logic to evaluate models fairly on real-world clinical datasets.
 
 ## ✅ Key Features
 
-- **📊 Comprehensive Evaluation Engine** Contains core semantic alignment algorithms (Normalized Edit Distance, Tau-dynamic length-adaptive thresholds) designed specifically for medical domain robustness.
+- **📊 Comprehensive Evaluation Engine** An evaluation pipeline that handles OCR errors and diverse clinical terminologies using length-adaptive semantic thresholds, ensuring fair assessment across models.
 - **⚕️ Multi-level Clinical Tasks** Tasks are structured around real-world medical extraction requirements:
 
   - Task 1 (Key Discovery): Identifying relevant fields within the document
@@ -17,11 +17,11 @@ MedStruct-S provides a robust evaluation engine based on core medical semantic a
 - **🧠 Advanced Matching Logic** Includes dynamic thresholding, text normalization, and span verification (Intersection over Union) to ensure accurate evaluation across different formatting styles.
 - **🤖 Model Compatibility** Compatible with any model capable of generating standardized JSONL predictions, including:
 
-  - BERT-based NER/EBQA models
+  - BERT-based NER/QA models
   - LLaMA, Qwen, and other open-source LLMs
   - GPT-4, Claude, and commercial APIs
 - **🧪 Detailed Metrics**
-  Calculates comprehensive Precision, Recall, and F1 scores across Exact and Approximate matching criteria, supporting both global and positive-only extraction scopes. All reported Precision, Recall, and F1 metrics are Micro-averaged across all instances to accurately reflect the model's capability.
+  Calculates comprehensive Precision, Recall, and F1 scores across Exact and Approximate matching criteria, supporting both global and positive-only extraction scopes. All reported Precision, Recall, and F1 metrics are Micro-level across all instances to accurately reflect the model's capability.
 
 ## 🚀 Getting Started
 
@@ -51,7 +51,7 @@ cd MedStruct-S
 | Field              | Type                   | Required | Description                                                                             |
 | :----------------- | :--------------------- | :------- | :-------------------------------------------------------------------------------------- |
 | `id`               | `string`               | Optional | Unique identifier for the sample, used for traceability and error positioning.          |
-| `report_title`     | `string`               | ✅        | Medical record type (e.g., "Discharge Summary"), used for Query Set matching in Task 2. |
+| `report_title`     | `string`               | Optional | Medical record type (e.g., "Discharge Summary"), used for Query Set matching in Task 2. |
 | `ocr_text`         | `string`               | Optional | Original OCR text, used for span verification and debugging.                            |
 | `pairs`            | `list[dict]`           | ✅        | List of key-value pairs, each being a self-contained dictionary.                        |
 | `pairs[].key`      | `string`               | ✅        | Key name.                                                                               |
