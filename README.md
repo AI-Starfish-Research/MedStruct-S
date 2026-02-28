@@ -13,7 +13,7 @@ MedStruct-S provides a robust evaluation engine based on core medical semantic a
 
   - Task 1 (Key Discovery): Identifying relevant fields within the document
   - Task 2 (QA): Query-set driven population of predefined medical schema
-  - Task 3 (KV Pairing): End-to-end extraction of key-value pairs
+  - Task 3 (KV Pairing): Open-World Key-Value Extraction and Pairing
 - **🧠 Advanced Matching Logic** Includes dynamic thresholding, text normalization, and span verification (Intersection over Union) to ensure accurate evaluation across different formatting styles.
 - **🤖 Model Compatibility** Compatible with any model capable of generating standardized JSONL predictions, including:
 
@@ -21,7 +21,7 @@ MedStruct-S provides a robust evaluation engine based on core medical semantic a
   - LLaMA, Qwen, and other open-source LLMs
   - GPT-4, Claude, and commercial APIs
 - **🧪 Detailed Metrics**
-  Calculates comprehensive Precision, Recall, and F1 scores across Exact and Approximate matching criteria, supporting both global and positive-only extraction scopes.
+  Calculates comprehensive Precision, Recall, and F1 scores across Exact and Approximate matching criteria, supporting both global and positive-only extraction scopes. All reported Precision, Recall, and F1 metrics are Micro-averaged across all instances to accurately reflect the model's capability.
 
 ## 🚀 Getting Started
 
@@ -62,8 +62,7 @@ cd MedStruct-S
 
 ### **Step 3: Download the dataset**
 
-Download the MedStruct-S dataset from [Placeholder Link]:  
-[https://example.com/medstruct-s/1.0.0/](https://example.com/medstruct-s/1.0.0/)
+Download the MedStruct-S dataset from [Placeholder Link]:[https://example.com/medstruct-s/1.0.0/](https://example.com/medstruct-s/1.0.0/)
 
 > **Note:** Access requires registration and data use agreement approval (Placeholder).
 
