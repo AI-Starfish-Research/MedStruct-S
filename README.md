@@ -73,11 +73,11 @@ Calculate P/R/F1 for all tasks. This is the recommended approach for standard be
 
 ```bash
 python scorer.py \
-    --pred_file predictions.jsonl \
-    --gt_file data/val_eval.jsonl \
-    --query_set data/keys_merged_cleaned.json \
+    --pred_file <path_to_predictions.jsonl> \
+    --gt_file <path_to_ground_truth.jsonl> \
+    --query_set <path_to_query_set.json> \
     --task_type all \
-    --output_file results/eval_output.json
+    --output_file <path_to_output.json>
 ```
 
 **Task 2 (Value Extraction) Only**
@@ -86,9 +86,9 @@ Suitable for evaluating the accuracy of value extraction on a predefined set of 
 ```bash
 python scorer.py \
     --task_type task2 \
-    --pred_file predictions.jsonl \
-    --gt_file data/val_eval.jsonl \
-    --query_set data/keys_merged_cleaned.json \
+    --pred_file <path_to_predictions.jsonl> \
+    --gt_file <path_to_ground_truth.jsonl> \
+    --query_set <path_to_query_set.json> \
     --model_name "MacBERT-QA"
 ```
 

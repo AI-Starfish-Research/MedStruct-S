@@ -63,7 +63,7 @@ def main():
     # Basic file I/O parameters
     parser.add_argument("--pred_file", required=True, help="Model prediction file (.jsonl)")
     parser.add_argument("--gt_file", required=True, help="Ground truth file (.jsonl)")
-    parser.add_argument("--query_set", dest="query_set_file", default="data/kv_ner_prepared_comparison/keys_merged_1027_cleaned.json", help="Alias mapping and standard field set (Query Set)")
+    parser.add_argument("--query_set", dest="query_set_file", default="<path_to_query_set.json>", help="Alias mapping and standard field set (Query Set)")
     parser.add_argument("--output_file", default=None, help="Output path for results JSON")
     parser.add_argument("--task_type", default="all", choices=["task1", "task2", "task3", "all"], help="Run specific task evaluation")
     
