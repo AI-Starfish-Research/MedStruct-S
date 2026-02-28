@@ -62,7 +62,7 @@ cd MedStruct-S
 
 ### **Step 3: Download the dataset**
 
-Download the MedStruct-S dataset from [Placeholder Link]:[https://example.com/medstruct-s/1.0.0/](https://example.com/medstruct-s/1.0.0/)
+Download the MedStruct-S dataset from (https://doi.org/10.5281/zenodo.18814410)
 
 > **Note:** Access requires registration and data use agreement approval (Placeholder).
 
