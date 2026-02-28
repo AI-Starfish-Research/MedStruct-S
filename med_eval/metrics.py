@@ -75,9 +75,9 @@ def compute_iou(span1, span2):
     Compute Intersection over Union between two spans (start, end).
     """
     if span1 is None and span2 is None:
-        return 1.0  # 双方均无位置信息，视为兼容
+        return 1.0  # Both lack position info, treated as compatible
     if span1 is None or span2 is None:
-        return 0.0  # 仅一方有位置信息，视为不兼容
+        return 0.0  # Only one side has position info, treated as incompatible
         
     s1, e1 = span1
     s2, e2 = span2
@@ -142,7 +142,7 @@ def align_instances(pred_items, gt_items, config):
         
     common_texts = set(p_groups.keys()) & set(g_groups.keys())
     for t in common_texts:
-        if t == "": continue 
+        if t == "": continue # Skip empty strings
         pairs = []
         for pidx in p_groups[t]:
             for gidx in g_groups[t]:

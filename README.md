@@ -1,114 +1,120 @@
-# MedStruct-S-Benchmark 评测工具包
+# MedStruct-S: A benchmark for Key Discovery, Key-Conditioned QA and Semi-Structured Extraction from OCR-Derived Clinical Reports
 
-本目录包含了用于评测 BERT (NER/EBQA) 和 GPT 系列模型在医疗文本信息抽取任务上的所有核心脚本。
-该架构已于 2026-02-10 完成模块化重构。
+## What is MedStruct-S?
 
----
+MedStruct-S is a standardized evaluation framework designed to assess the performance of models (such as BERT-based NER/QA and Large Language Models - LLMs) on medical text structuring tasks.
 
-## 文件结构
+MedStruct-S provides a robust evaluation engine based on core medical semantic alignment, moving beyond simple string-matching to evaluate the true structural integrity and accuracy of information extraction. It includes task-specific logic and data preprocessing utilities to evaluate models fairly on real-world clinical datasets.
 
-| 路径 & 脚本 | 功能                                                       | 状态         |
-| :---------- | :--------------------------------------------------------- | :----------- |
-| `scorer.py` | **核心评估入口**：基于 `med_eval` 引擎执行 Task 1/2/3 评估 | **最新版本** |
-| `med_eval/` | **核心引擎包**：包含指标计算及任务评估实现                 | **核心逻辑** |
-| `utils/`    | **工具集**：包含 GPT 输出对齐、键名 Schema 构建等辅助脚本  | **工具**     |
-| `docs/`     | **文档库**：包含架构设计说明及重构计划                     | **开发文档** |
+## ✅ Key Features
 
----
+- **📊 Comprehensive Evaluation Engine** Contains core semantic alignment algorithms (Normalized Edit Distance, Tau-dynamic length-adaptive thresholds) designed specifically for medical domain robustness.
+- **⚕️ Multi-level Clinical Tasks** Tasks are structured around real-world medical extraction requirements:
 
-## 输入数据标准格式
+  - Task 1 (Key Discovery): Identifying relevant fields within the document
+  - Task 2 (QA): Query-set driven population of predefined medical schema
+  - Task 3 (KV Pairing): End-to-end extraction of key-value pairs
+- **🧠 Advanced Matching Logic** Includes dynamic thresholding, text normalization, and span verification (Intersection over Union) to ensure accurate evaluation across different formatting styles.
+- **🤖 Model Compatibility** Compatible with any model capable of generating standardized JSONL predictions, including:
 
-`scorer.py` 要求 `--pred_file` 和 `--gt_file` 均为 **标准化 JSONL** 格式。
-每行一个 JSON 对象，结构如下：
+  - BERT-based NER/EBQA models
+  - LLaMA, Qwen, and other open-source LLMs
+  - GPT-4, Claude, and commercial APIs
+- **🧪 Detailed Metrics**
+  Calculates comprehensive Precision, Recall, and F1 scores across Exact and Approximate matching criteria, supporting both global and positive-only extraction scopes.
+
+## 🚀 Getting Started
+
+### **Step 1: Clone the repository**
+
+```bash
+git clone https://github.com/Anonymous/MedStruct-S.git
+cd MedStruct-S
+```
+
+### **Step 2: Prepare your data**
+
+`scorer.py` requires `--pred_file` and `--gt_file` to be in **standardized JSONL** format. Each line must be a JSON object with the following structure:
 
 ```json
 {
     "id": "sample_001",
-    "report_title": "出院小结",
-    "ocr_text": "姓名 张三 诊断 流行性感冒 ...",
+    "report_title": "Discharge Summary",
+    "ocr_text": "Name: Zhang San. Diagnosis: Influenza ...",
     "pairs": [
-        {"key": "姓名", "value": "张三", "key_span": [0, 2]},
-        {"key": "诊断", "value": "流行性感冒", "key_span": [8, 10]}
+        {"key": "Name", "value": "Zhang San", "key_span": [0, 2]},
+        {"key": "Diagnosis", "value": "Influenza", "key_span": [8, 10]}
     ]
 }
 ```
 
-| 字段               | 类型                   | 必需 | 说明                                               |
-| :----------------- | :--------------------- | :--- | :------------------------------------------------- |
-| `id`               | `string`               | 推荐 | 样本唯一标识，用于溯源和错误定位                   |
-| `report_title`     | `string`               | ✅    | 病历类型（如 "出院小结"），Task 2 用于 Schema 匹配 |
-| `ocr_text`         | `string`               | 推荐 | OCR 原文，供 span 验证和 debug 使用                |
-| `pairs`            | `list[dict]`           | ✅    | 键值对列表，每项为自包含的字典                     |
-| `pairs[].key`      | `string`               | ✅    | 键名                                               |
-| `pairs[].value`    | `string`               | ✅    | 值                                                 |
-| `pairs[].key_span` | `[int, int]` 或 `null` | ✅    | 键名在 `ocr_text` 中的字符位置，无则为 `null`      |
+| Field              | Type                   | Required | Description                                                                             |
+| :----------------- | :--------------------- | :------- | :-------------------------------------------------------------------------------------- |
+| `id`               | `string`               | Optional | Unique identifier for the sample, used for traceability and error positioning.          |
+| `report_title`     | `string`               | ✅        | Medical record type (e.g., "Discharge Summary"), used for Query Set matching in Task 2. |
+| `ocr_text`         | `string`               | Optional | Original OCR text, used for span verification and debugging.                            |
+| `pairs`            | `list[dict]`           | ✅        | List of key-value pairs, each being a self-contained dictionary.                        |
+| `pairs[].key`      | `string`               | ✅        | Key name.                                                                               |
+| `pairs[].value`    | `string`               | ✅        | Extracted value.                                                                        |
+| `pairs[].key_span` | `[int, int]` or `null` | ✅        | Character-level position of the key name in `ocr_text`. Use `null` if unavailable.      |
 
-> **重要**：`scorer.py` 不再内置格式转换逻辑。
->
-> **重复键支持**：同一样本中可以出现多个同名键（如两个"日期"），每个 pair 独立携带 `key_span`，不存在字典键冲突。
+> **Note**: Multiple pairs with the same key name (e.g., two "Dates") are supported. Each pair carries its own `key_span` independently.
 
----
+### **Step 3: Download the dataset**
 
-## 快速开始
+Download the MedStruct-S dataset from [Placeholder Link]:  
+[https://example.com/medstruct-s/1.0.0/](https://example.com/medstruct-s/1.0.0/)
 
-### 1. 全量评测 (Task 1 + 2 + 3)
+> **Note:** Access requires registration and data use agreement approval (Placeholder).
 
-执行所有任务的 P/R/F1 计算，这是标准 Benchmark 推荐的方式：
+### **Step 4: Run Evaluation**
+
+**Full Evaluation (Task 1 + 2 + 3)**
+Calculate P/R/F1 for all tasks. This is the recommended approach for standard benchmark reporting:
 
 ```bash
 python scorer.py \
     --pred_file predictions.jsonl \
     --gt_file data/val_eval.jsonl \
-    --schema_file data/keys_merged_cleaned.json \
+    --query_set data/keys_merged_cleaned.json \
     --task_type all \
     --output_file results/eval_output.json
 ```
 
-### 2. 仅评测 Task 2 (Value Extraction)
-
-适用于评估模型在已知字段上的值提取准确性：
+**Task 2 (Value Extraction) Only**
+Suitable for evaluating the accuracy of value extraction on a predefined set of fields:
 
 ```bash
 python scorer.py \
     --task_type task2 \
     --pred_file predictions.jsonl \
     --gt_file data/val_eval.jsonl \
-    --schema_file data/keys_merged_cleaned.json \
+    --query_set data/keys_merged_cleaned.json \
     --model_name "MacBERT-QA"
 ```
 
-**关键参数：**
+### Advanced Configuration
 
-- `--pred_file` / `--gt_file`：**必须**为标准化格式的 JSONL，且样本数量必须一致。
-- `--task_type`：可选 `task1`, `task2`, `task3` 或 `all` (默认)。
-- `--schema_file`：Task 2 (Schema 驱动) 必须，用于别名映射及全量指标计算。
+The behavior of the evaluation engine can be dynamically controlled via CLI arguments (corresponding to the algorithms in `med_eval/metrics.py`):
 
----
+| Parameter                | Description                                                                                  | Default Behavior                     |
+| :----------------------- | :------------------------------------------------------------------------------------------- | :----------------------------------- |
+| `--no_normalize`         | Disable text preprocessing (e.g., lowercase conversion, whitespace removal).                 | Normalization**enabled** by default. |
+| `--similarity_threshold` | Set the base NED similarity threshold when length-adaptive dynamic thresholding is disabled. | Tau**enabled** by default.           |
+| `--disable_tau`          | Disable length-adaptive dynamic thresholding (Tau Logic).                                    | Tau**enabled** by default.           |
+| `--overlap_threshold`    | Set the IoU threshold for position verification.                                             | Defaults to `0.0`.                   |
 
-### 高级行为配置
+## 📊 Output Results
 
-通过命令行参数可以动态控制评测引擎的行为（对应 `med_eval/metrics.py` 的算法）：
-
-| 参数                     | 说明                                                  | 默认行为           |
-| :----------------------- | :---------------------------------------------------- | :----------------- |
-| `--no_normalize`         | 禁用文本预处理（如转小写、去空格）                    | 默认**启用**归一化 |
-| `--similarity_threshold` | 禁用长度自适应动态阈值时设置 NED 相似度判定的基准阈值 | 默认**启用** Tau   |
-| `--disable_tau`          | 禁用长度自适应动态阈值 (Tau Logic)                    | 默认**启用** Tau   |
-| `--overlap_threshold`    | 设置位置校验的 IoU 阈值                               | `0.0`              |
-
----
-
-## 📊 输出结果说明
-
-输出 JSON 包含 `summary`（元信息）和 `tasks`（各任务指标）两部分：
+The output JSON contains a `summary` (metadata) section and a `tasks` (task-specific metrics) section:
 
 ```json
 {
   "summary": {
     "model": "model_name",
-    "dataset": "Original",
+    "dataset": "MedStruct-S",
     "samples": 100,
-    "eval_time": "2026-02-10 18:00:00",
+    "eval_time": "202X-XX-XX XX:00:00",
     "config": {
       "normalize": true,
       "similarity_threshold": 0.8,
@@ -153,30 +159,24 @@ python scorer.py \
 }
 ```
 
-### 指标说明
+### Evaluation Metrics Overview
 
-| 任务       | 指标维度                                                        | 含义                                          |
-| :--------- | :-------------------------------------------------------------- | :-------------------------------------------- |
-| **Task 1** | `exact` / `approx`                                              | 键名发现的精确匹配与近似匹配                  |
-| **Task 2** | `global` + `pos_only` × `exact` / `approx`                      | 全量字段与仅非空字段的值提取准确性            |
-| **Task 3** | `exact_exact` / `exact_approximate` / `approximate_approximate` | 键精确+值精确 / 键精确+值近似 / 键近似+值近似 |
+- **Task 1: Key Discovery**
+  Evaluates the model's ability to identify keys (fields) within the document, independent of their associated values. Output: Precision / Recall / F1 via Exact and Approximate matching.
+- **Task 2: QA**
+  Evaluates the model's accuracy in extracting values for a predefined set of fields. Output: Exact / Approx P/R/F1 across **Global** (all schema fields) and **Positive-only** (existing GT values) scopes.
+- **Task 3: KV Pairing**
+  Evaluates how accurately the model pairs keys with their correct values. Output splits into Exact-Exact, Exact-Approx, and Approx-Approx matches.
 
----
+## 📄 Citation
 
-## 📝 版本历史
+If you find this benchmark or code useful in your research, please cite the following (to be updated):
 
-- **2026-02-10 (v2.1)**: **输入格式优化 (Format Optimization)**
-  - **Dict-style Pairs**：`pairs` 从 `[[key, value]]` 二元组改为 `[{"key", "value", "key_span"}]` 自包含字典。
-  - **移除冗余字段**：删除 `keys` 和 `spans_map`，span 信息内嵌于每个 pair 中。
-  - **新增 `id` 和 `ocr_text` 字段**：增强样本溯源性和 debug 能力。
-  - **重复键支持**：同名键在 pair 列表中独立存在，不再受字典键唯一性约束。
-- **2026-02-10 (v2.0)**: **深度模块化架构重构 (Architecture Overhaul)**
-  - 核心逻辑迁移至 `med_eval` 包，三个 Task 独立评估函数。
-  - **移除内置格式转换**：要求输入文件为标准化格式。
-  - **Config 扁平化**：所有评估函数接收独立参数，不再传递 config 字典。
-  - **强制 EM+AM 双指标 + Span 校验**：不可关闭，确保评测全面性。
-  - **Task 3 三阶指标**：`exact_exact` / `exact_approximate` / `approximate_approximate`。
-  - Task 2 改为 **Schema 驱动**，支持 Global/Pos-only 一键输出。
-  - 样本数不等时直接报错退出，不再静默截断。
-- **2026-02-07**: 新增"配置模式"，支持命令行开启/关闭归一化。
-- **2026-02-05**: 初始版本，整合 BERT 和 GPT 评测。
+```bibtex
+@inproceedings{med_struct_s,
+  title={MedStruct-S: A benchmark for Key Discovery, Key-Conditioned QA and Semi-Structured Extraction from OCR-Derived Clinical Reports},
+  author={Anonymous Authors},
+  year={202X},
+  booktitle={Under Review}
+}
+```

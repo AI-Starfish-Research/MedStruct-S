@@ -2,14 +2,14 @@ from med_eval.evaluators.task1_evaluator import evaluate_task1_discovery
 from med_eval.evaluators.task2_evaluator import evaluate_task2_qa
 from med_eval.evaluators.task3_evaluator import evaluate_task3_pairing
 
-def run_evaluation(predictions, ground_truth, key_alias_map=None, task_type="all", normalize=True, tau_dynamic=True, similarity_threshold=0.8, overlap_threshold=0.0):
+def run_evaluation(predictions, ground_truth, query_set=None, task_type="all", normalize=True, tau_dynamic=True, similarity_threshold=0.8, overlap_threshold=0.0):
     """
     Main entry point for running one or more task evaluations.
     
     Args:
         predictions: Standardized prediction samples.
         ground_truth: Standardized GT samples.
-        key_alias_map: Schema mapping (required for Task 2).
+        query_set: Query Set mapping (required for Task 2).
         task_type: 'task1', 'task2', 'task3', or 'all'.
         normalize: Whether to normalize text before comparison.
         tau_dynamic: Whether to use dynamic tau for fuzzy matching.
@@ -41,12 +41,12 @@ def run_evaluation(predictions, ground_truth, key_alias_map=None, task_type="all
         )
         
     if task_type in ["all", "task2"]:
-        if not key_alias_map:
-            raise ValueError("Task 2 requires 'key_alias_map' (Schema).")
+        if not query_set:
+            raise ValueError("Task 2 requires 'query_set'.")
         results["Task 2 (Value Extraction)"] = evaluate_task2_qa(
             predictions, 
             ground_truth, 
-            key_alias_map,
+            query_set,
             normalize=normalize,
             tau_dynamic=tau_dynamic,
             similarity_threshold=similarity_threshold

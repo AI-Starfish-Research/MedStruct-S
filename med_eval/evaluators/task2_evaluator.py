@@ -7,14 +7,14 @@ from med_eval.metrics import (
 def is_empty(v):
     return not v or str(v).strip() == "" or str(v).lower() == "null"
 
-def evaluate_task2_qa(predictions, ground_truth, key_alias_map, normalize=True, tau_dynamic=True, similarity_threshold=0.8):
+def evaluate_task2_qa(predictions, ground_truth, query_set, normalize=True, tau_dynamic=True, similarity_threshold=0.8):
     """
-    Task 2: Value Extraction (Schema-Driven).
+    Task 2: Value Extraction (Query-Set Driven).
     
     Args:
         predictions: Normalized list of samples.
         ground_truth: Normalized list of samples.
-        key_alias_map: Schema mapping.
+        query_set: Query Set mapping.
         normalize: Text normalization flag.
         tau_dynamic: Dynamic threshold flag.
         similarity_threshold: Base NED threshold.
@@ -35,12 +35,12 @@ def evaluate_task2_qa(predictions, ground_truth, key_alias_map, normalize=True, 
 
     # Build a flat alias lookup for convenience: {alias: canonical}
     # and also collect all canonical keys per category
-    schema_by_category = {}
+    queries_by_category = {}
     alias_to_canonical = {}
     
-    for category, fields in key_alias_map.items():
+    for category, fields in query_set.items():
         if not isinstance(fields, dict): continue
-        schema_by_category[category] = set(fields.keys())
+        queries_by_category[category] = set(fields.keys())
         for canonical, info in fields.items():
             alias_to_canonical[canonical] = canonical
             if isinstance(info, dict) and "别名" in info:
@@ -48,17 +48,16 @@ def evaluate_task2_qa(predictions, ground_truth, key_alias_map, normalize=True, 
                     alias_to_canonical[alias] = canonical
 
     for p_sample, g_sample in zip(predictions, ground_truth):
-        # Determine current schema based on report title
-        title = p_sample.get('report_title') or g_sample.get('report_title', '通用病历')
-        current_fields = schema_by_category.get(title, set())
+        # Determine current query set based on report title
+        title = p_sample.get('report_title') or g_sample.get('report_title', 'General Record')
+        current_fields = queries_by_category.get(title, set())
         
         # If title not found, fallback to all canonical keys or empty? 
-        # Scorer code used keys_dict.get(title, {})
         if not current_fields:
-            # Maybe it's a category not in schema, or generic
+            # Maybe it's a category not in query set, or generic
             pass
 
-        # 从 dict-style pairs 构建规范化字典
+        # Build normalized dictionaries from dict-style pairs
         p_pairs = p_sample.get('pairs', [])
         g_pairs = g_sample.get('pairs', [])
         
@@ -72,13 +71,13 @@ def evaluate_task2_qa(predictions, ground_truth, key_alias_map, normalize=True, 
             can_k = alias_to_canonical.get(p["key"], p["key"])
             g_dict[can_k] = p["value"]
 
-        # Schema-driven loop
+        # Query-set driven loop
         for field in current_fields:
-            pv = p_dict.get(field)
+            pv = p_dict.get(field, "")
             gv = g_dict.get(field, "") # Default to empty if not in GT
 
             is_pos = not is_empty(gv)
-            has_pred = field in p_dict
+            has_pred = True
             
             # Comparison
             t1_match, t2_match = False, False

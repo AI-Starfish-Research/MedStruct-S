@@ -6,13 +6,13 @@ import os
 import re
 from collections import defaultdict
 
-# Add current directory to path for schema_utils
+# Add current directory to path for query_set_utils
 sys.path.insert(0, os.getcwd())
 try:
-    from pre_struct.kv_ner.schema_utils import load_schema
+    from pre_struct.kv_ner.query_set_utils import load_query_set
 except ImportError:
     # Fallback if structure varies
-    def load_schema(p): 
+    def load_query_set(p): 
         with open(p, 'r', encoding='utf-8') as f: return json.load(f)
 
 def robust_parse_json_list(text):
@@ -85,20 +85,21 @@ def get_fingerprint(text, length=100):
     clean = re.sub(r'[^\w\u4e00-\u9fa5]', '', text)
     return clean[:length]
 
-def extract_key_from_question(question, title, schema, q_to_key_map):
+def extract_key_from_question(question, title, query_set, q_to_key_map):
     q_str = question.strip()
     
     # 1. Exact map
     if q_str in q_to_key_map:
         return q_to_key_map[q_str]
         
-    # 2. Schema-based containment
-    if title and schema:
+    # 2. Query-Set-based containment
+    if title and query_set:
         candidates = []
-        if title in schema:
-            candidates.extend(schema[title].keys())
-        if '通用病历' in schema:
-            candidates.extend(schema['通用病历'].keys())
+        if title in query_set:
+            candidates.extend(query_set[title].keys())
+        if 'General Medical Record' in query_set or '通用病历' in query_set:
+            gen_key = 'General Medical Record' if 'General Medical Record' in query_set else '通用病历'
+            candidates.extend(query_set[gen_key].keys())
         
         # Sort by length desc to match specific keys first
         candidates.sort(key=len, reverse=True)
@@ -107,7 +108,7 @@ def extract_key_from_question(question, title, schema, q_to_key_map):
             if k in q_str:
                 return k
 
-    # 3. Heuristic fallback
+    # 3. Heuristic fallback (Matches specific Chinese patterns in questions)
     match = re.search(r"患者?(.+?)是什么", q_str)
     if match: return match.group(1)
     match = re.search(r"此.+?的(.+?)是什么", q_str)
@@ -132,7 +133,7 @@ def clean_cot(text):
             if p.strip():
                 text = p.strip()
                 break
-    # Remove prefixes
+    # Remove prefixes (Matches "Answer:" in Chinese)
     text = text.replace("答案：", "").replace("### 答案：", "").strip()
     return text
 
@@ -140,7 +141,7 @@ def main():
     parser = argparse.ArgumentParser(description="Convert LLM Outputs and recover Titles for Scoring")
     parser.add_argument("--llm_file", required=True, help="GPT output JSONL")
     parser.add_argument("--gt_master", default="data/kv_ner_prepared_comparison/val_eval.jsonl")
-    parser.add_argument("--schema_file", default="data/kv_ner_prepared_comparison/keys_merged_1027_cleaned.json")
+    parser.add_argument("--query_set", dest="query_set_file", default="data/kv_ner_prepared_comparison/keys_merged_1027_cleaned.json")
     parser.add_argument("--task_type", choices=['task1', 'task2', 'task3'], required=True)
     parser.add_argument("--output_pred", required=True)
     parser.add_argument("--output_gt", required=True)
@@ -174,12 +175,12 @@ def main():
                     
     print(f"Indexed {len(fingerprint_to_rec)} fingerprints.")
 
-    # 2. Load Schema for Task 3 Key discovery
-    q_to_key = {}
-    if args.task_type == 'task3':
-        print(f"Loading Schema from {args.schema_file}...")
-        schema = load_schema(args.schema_file)
-        for title, key_map in schema.items():
+    # 2. Load Query Set for Task 3 Key discovery
+    query_set = {}
+    if args.query_set_file and os.path.exists(args.query_set_file):
+        print(f"Loading Query Set from {args.query_set_file}...")
+        query_set = load_query_set(args.query_set_file)
+        for title, key_map in query_set.items():
             for key, info in key_map.items():
                 q = info.get("Q", "").strip()
                 if q: q_to_key[q] = key
@@ -232,6 +233,7 @@ def main():
                     else:
                         report_part = full_input.replace("<text>", "").strip()
                 else:
+                    # Remove common prefixes in LLM input
                     report_part = full_input.replace("医疗报告文本：", "").replace("文档内容：", "").replace("---\n", "").strip()
                 
                 # Extract question if present
@@ -315,8 +317,8 @@ def main():
             if args.task_type == 'task3':
                 raw_pred = clean_cot(raw_pred)
 
-                # Pass title and schema to help with key extraction from SFT-style questions
-                key = extract_key_from_question(q_part, title, schema if args.task_type == 'task3' else {}, q_to_key)
+                # Pass title and query_set to help with key extraction from SFT-style questions
+                key = extract_key_from_question(q_part, title, query_set if args.task_type == 'task3' else {}, q_to_key)
                 
                 # Use FP as key for aggregation
                 task_key = fp if fp else str(idx) # Fallback to index if empty text
@@ -350,7 +352,7 @@ def main():
                                     v = p.get('value') or p.get('v')
                                     if k is not None:
                                         pred_pairs.append({"key": k, "value": v if v is not None else ""})
-                                    elif len(p) == 1: # Single key-value dict like {"性别": "男"}
+                                    elif len(p) == 1: # Single key-value dict like {"Gender": "Male"}
                                         for k, v in p.items():
                                             pred_pairs.append({"key": k, "value": v})
                         elif isinstance(d, dict):

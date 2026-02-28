@@ -8,29 +8,29 @@ from med_eval.metrics import (
 def evaluate_task1_discovery(predictions, ground_truth, normalize=True, tau_dynamic=True, similarity_threshold=0.8, overlap_threshold=0.0):
     """
     Task 1: Key Discovery.
-    评估模型是否正确发现了文档中的键名。
+    Evaluates whether the model correctly identifies keys in the document.
     
-    输入格式（新标准）:
-        每个 sample 的 pairs 为 [{"key": str, "value": str, "key_span": [int,int]|null}, ...]
-        对于 GT，scorer.py 会预先过滤只保留有值的 pair（Positive Discovery）。
+    Input format (standardized):
+        Each sample's pairs are [{"key": str, "value": str, "key_span": [int,int]|null}, ...]
+        For GT, scorer.py pre-filters to keep only pairs with values (Positive Discovery).
     
     Args:
-        predictions: 预测样本列表。
-        ground_truth: 真值样本列表（已过滤为 Positive Discovery）。
-        normalize: 文本归一化开关。
-        tau_dynamic: 动态阈值开关。
-        similarity_threshold: NED 基准阈值。
-        overlap_threshold: Span IoU 阈值。
+        predictions: List of predicted samples.
+        ground_truth: List of ground truth samples (pre-filtered for Positive Discovery).
+        normalize: Text normalization toggle.
+        tau_dynamic: Dynamic threshold toggle.
+        similarity_threshold: Base NED threshold.
+        overlap_threshold: Span IoU threshold.
         
     Returns:
-        包含 stats 和 metrics 的评测结果字典。
+        Evaluation results dictionary containing stats and metrics.
     """
     total_tp_e = 0
     total_tp_a = 0
     total_p_count = 0
     total_g_count = 0
     
-    # 内部行为标志（强制启用）
+    # Internal behavior flags (forced enabled)
     use_em = True
     use_am = True
     use_span = True
@@ -39,7 +39,7 @@ def evaluate_task1_discovery(predictions, ground_truth, normalize=True, tau_dyna
     sim_threshold = similarity_threshold
 
     for p_sample, g_sample in zip(predictions, ground_truth):
-        # 从 dict-style pairs 中提取 keys 和 spans
+        # Extract keys and spans from dict-style pairs
         p_pairs = p_sample.get('pairs', [])
         g_pairs = g_sample.get('pairs', [])
 
@@ -66,24 +66,24 @@ def evaluate_task1_discovery(predictions, ground_truth, normalize=True, tau_dyna
         for pi, p_item in enumerate(p_items):
             for gi, g_item in enumerate(g_items):
                 if gi in matched_g_e: continue
-                # Span 位置校验
+                # Span position verification
                 if use_span and compute_iou(p_item["span"], g_item["span"]) <= overlap_threshold:
                     continue
-                # 文本精确匹配
+                # Text exact match
                 if p_item["text"] == g_item["text"]:
                     matched_g_e.add(gi)
                     break
         
-        # Phase 2: Approx Match (AM) - 包含 EM
+        # Phase 2: Approx Match (AM) - includes EM
         for pi, p_item in enumerate(p_items):
             best_gi = -1
             max_sim = -1
             for gi, g_item in enumerate(g_items):
                 if gi in matched_g_a: continue
-                # Span 位置校验
+                # Span position verification
                 if use_span and compute_iou(p_item["span"], g_item["span"]) <= overlap_threshold:
                     continue
-                # 相似度校验
+                # Similarity verification
                 sim = compute_similarity(p_item["text"], g_item["text"], use_normalization=use_norm)
                 thresh = get_threshold(len(g_item["text"])) if tau_dynamic else sim_threshold
                 if sim >= thresh:
